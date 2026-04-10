@@ -33,10 +33,6 @@ jobs:
       - name: Build binary
         run: bun build src/cli.ts --compile --target=${{ matrix.bun_target }} --outfile gflights-${{ matrix.target }}
 
-      - name: Ad-hoc codesign (macOS)
-        if: startsWith(matrix.target, 'darwin')
-        run: codesign -s - --force gflights-${{ matrix.target }}
-
       - name: Compress
         run: |
           tar czf gflights-${{ matrix.target }}.tar.gz gflights-${{ matrix.target }}
@@ -89,7 +85,7 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   update-formula:
-    needs: release
+    needs: npm-publish
     runs-on: ubuntu-latest
 
     steps:
@@ -97,70 +93,34 @@ jobs:
         with:
           ref: main
 
-      - uses: actions/download-artifact@v4
-        with:
-          name: gflights-darwin-arm64
-
-      - uses: actions/download-artifact@v4
-        with:
-          name: gflights-darwin-x64
-
-      - uses: actions/download-artifact@v4
-        with:
-          name: gflights-linux-x64
-
       - name: Update formula
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          ARM64_SHA=$(awk '{print $1}' gflights-darwin-arm64.tar.gz.sha256)
-          X64_SHA=$(awk '{print $1}' gflights-darwin-x64.tar.gz.sha256)
-          LINUX_SHA=$(awk '{print $1}' gflights-linux-x64.tar.gz.sha256)
+          URL="https://registry.npmjs.org/gflights/-/gflights-${VERSION}.tgz"
+          sleep 10
+          SHA=$(curl -sL "$URL" | shasum -a 256 | awk '{print $1}')
 
-          cat > Formula/gflights.rb << EOF
+          cat > Formula/gflights.rb << FORMULA
           class Gflights < Formula
             desc "Search Google Flights from the terminal"
             homepage "https://github.com/f312213213/gflights"
-            version "${VERSION}"
+            url "${URL}"
+            sha256 "${SHA}"
             license "MIT"
 
-            on_macos do
-              on_arm do
-                url "https://github.com/f312213213/gflights/releases/download/v#{version}/gflights-darwin-arm64.tar.gz"
-                sha256 "${ARM64_SHA}"
+            depends_on "node"
 
-                def install
-                  bin.install "gflights-darwin-arm64" => "gflights"
-                end
-              end
-
-              on_intel do
-                url "https://github.com/f312213213/gflights/releases/download/v#{version}/gflights-darwin-x64.tar.gz"
-                sha256 "${X64_SHA}"
-
-                def install
-                  bin.install "gflights-darwin-x64" => "gflights"
-                end
-              end
-            end
-
-            on_linux do
-              on_intel do
-                url "https://github.com/f312213213/gflights/releases/download/v#{version}/gflights-linux-x64.tar.gz"
-                sha256 "${LINUX_SHA}"
-
-                def install
-                  bin.install "gflights-linux-x64" => "gflights"
-                end
-              end
+            def install
+              system "npm", "install", *std_npm_args
+              bin.install_symlink libexec.glob("bin/*")
             end
 
             test do
               assert_match "Usage:", shell_output("#{bin}/gflights --help")
             end
           end
-          EOF
+          FORMULA
 
-          # Fix indentation (heredoc adds leading spaces)
           sed -i 's/^          //' Formula/gflights.rb
 
       - name: Commit formula update
@@ -168,5 +128,4 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add Formula/gflights.rb
-          git commit -m "formula: update to ${GITHUB_REF_NAME}"
-          git push
+          git diff --staged --quiet || (git commit -m "formula: update to ${GITHUB_REF_NAME}" && git push)
