@@ -33,6 +33,10 @@ jobs:
       - name: Build binary
         run: bun build src/cli.ts --compile --target=${{ matrix.bun_target }} --outfile gflights-${{ matrix.target }}
 
+      - name: Ad-hoc codesign (macOS)
+        if: startsWith(matrix.target, 'darwin')
+        run: codesign -s - --force gflights-${{ matrix.target }}
+
       - name: Compress
         run: |
           tar czf gflights-${{ matrix.target }}.tar.gz gflights-${{ matrix.target }}
