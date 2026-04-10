@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
-import { queryOneWay, queryRoundTrip, queryMultiCity } from "./client.js";
-import type { FlightResult, MultiCityResult, QueryOptions, SeatClass } from "./types.js";
+import { createInterface } from "node:readline";
+import { queryOneWay, queryRoundTrip, queryMultiCity, createMultiCityStepper } from "./client.js";
+import type { FlightResult, Itinerary, MultiCityResult, QueryOptions, SeatClass } from "./types.js";
 import type { MultiCityLeg } from "./payload.js";
 
 function usage(): void {
@@ -18,19 +19,42 @@ Arguments:
 
 Options:
   --multi                                             Multi-city mode (args are triplets of origin dest date)
+  --select [indices]                                  Multi-city step-by-step selection (e.g. --select 0,2)
   --class <economy|premium_economy|business|first>    Seat class (default: economy)
   --adults <n>                                        Number of adults (default: 1)
   --children <n>                                      Number of children (default: 0)
   --stops <0|1|2>                                     Max stops
+  --airlines <codes>                                  Comma-separated airline codes (e.g. BR,CI)
+  --max-duration <min>                                Max flight duration in minutes
+  --depart <from-to>                                  Departure time range in hours (e.g. 8-18)
+  --arrive <from-to>                                  Arrival time range in hours (e.g. 10-22)
+  --layover-airports <codes>                          Comma-separated layover airport codes
+  --max-layover <min>                                 Max layover duration in minutes
+  --less-emissions                                    Only show lower-emission flights
+  --max-price <usd>                                   Max price in USD
+  --checked-bags <n>                                  Number of checked bags to include in price
+  --carry-on                                          Include carry-on in price
+  --no-basic-economy                                  Exclude basic economy fares
   --all                                               Show all itineraries, not just cheapest
   --json                                              Output raw JSON
   -h, --help                                          Show this help
+
+Multi-city step-by-step (--select):
+  Without --select, --multi auto-picks the cheapest at each segment.
+  With --select, you control which itinerary is chosen at each step.
+  Each call replays previous selections and returns the next segment's options.
+
+  gflights --multi --select --json ...                # get segment 1 options
+  gflights --multi --select 0 --json ...              # pick seg1=0, get segment 2 options
+  gflights --multi --select 0,2 --json ...            # pick seg1=0 seg2=2, get segment 3 options
+  gflights --multi --select 0,2,1 --json ...          # all picked, get final result
 
 Examples:
   gflights SFO LAX 2026-05-15
   gflights JFK LHR 2026-06-01 2026-06-15 --class business --stops 0
   gflights SFO NRT 2026-07-01 --all
-  gflights --multi SFO LAX 2026-05-15 LAX JFK 2026-05-18 JFK SFO 2026-05-22`);
+  gflights --multi SFO LAX 2026-05-15 LAX JFK 2026-05-18 JFK SFO 2026-05-22
+  gflights --multi --select --json TPE NRT 2026-05-01 NRT ICN 2026-05-05 ICN TPE 2026-05-09`);
   process.exit(0);
 }
 
@@ -43,6 +67,7 @@ function parseArgs(argv: string[]) {
   let showAll = false;
   let json = false;
   let multi = false;
+  let select: number[] | null = null;
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -50,6 +75,17 @@ function parseArgs(argv: string[]) {
       case "--multi":
         multi = true;
         break;
+      case "--select": {
+        // --select with optional comma-separated indices
+        const next = args[i + 1];
+        if (next && !next.startsWith("-")) {
+          select = next.split(",").map(s => parseInt(s.trim(), 10));
+          i++;
+        } else {
+          select = [];
+        }
+        break;
+      }
       case "--class":
         options.seatClass = args[++i] as SeatClass;
         break;
@@ -61,6 +97,43 @@ function parseArgs(argv: string[]) {
         break;
       case "--stops":
         options.maxStops = parseInt(args[++i], 10) as 0 | 1 | 2;
+        break;
+      case "--airlines":
+        options.airlines = args[++i].split(",").map(s => s.trim().toUpperCase());
+        break;
+      case "--max-duration":
+        options.maxDuration = parseInt(args[++i], 10);
+        break;
+      case "--depart": {
+        const [from, to] = args[++i].split("-").map(Number);
+        options.departureTime = [from, to];
+        break;
+      }
+      case "--arrive": {
+        const [from, to] = args[++i].split("-").map(Number);
+        options.arrivalTime = [from, to];
+        break;
+      }
+      case "--layover-airports":
+        options.layoverAirports = args[++i].split(",").map(s => s.trim().toUpperCase());
+        break;
+      case "--max-layover":
+        options.maxLayoverDuration = parseInt(args[++i], 10);
+        break;
+      case "--less-emissions":
+        options.lessEmissions = true;
+        break;
+      case "--max-price":
+        options.maxPrice = parseInt(args[++i], 10);
+        break;
+      case "--checked-bags":
+        options.checkedBags = parseInt(args[++i], 10);
+        break;
+      case "--carry-on":
+        options.carryOn = true;
+        break;
+      case "--no-basic-economy":
+        options.excludeBasicEconomy = true;
         break;
       case "--all":
         showAll = true;
@@ -90,7 +163,7 @@ function parseArgs(argv: string[]) {
         date: positional[i + 2],
       });
     }
-    return { mode: "multi-city" as const, legs, options, showAll, json };
+    return { mode: "multi-city" as const, legs, options, showAll, json, select };
   }
 
   if (positional.length < 3) {
@@ -184,15 +257,60 @@ function printMultiCityResult(result: MultiCityResult, showAll: boolean) {
   }
 }
 
+/**
+ * Run multi-city step-by-step with --select.
+ * Replays previous selections, then outputs the next step's options (or final result).
+ */
+async function runStepSelect(legs: MultiCityLeg[], selections: number[], options: QueryOptions) {
+  const stepper = createMultiCityStepper(legs, options);
+
+  // Step 1: get first segment options (no selection needed)
+  let result = await stepper.next();
+
+  // Replay previous selections
+  for (let i = 0; i < selections.length; i++) {
+    if ("error" in result && result.error) {
+      console.log(JSON.stringify({ error: result.error }));
+      process.exit(1);
+    }
+
+    // If we already got a final result, stop
+    if ("totalPrice" in result) {
+      console.log(JSON.stringify(result));
+      return;
+    }
+
+    result = await stepper.next(selections[i]);
+  }
+
+  // Output current state
+  if ("totalPrice" in result) {
+    // All segments selected — final result
+    console.log(JSON.stringify(result, null, 2));
+  } else if ("itineraries" in result) {
+    // Next segment's options
+    console.log(JSON.stringify({
+      step: result.segmentIndex + 1,
+      totalSteps: legs.length,
+      segment: result.leg,
+      itineraries: result.itineraries,
+    }, null, 2));
+  }
+}
+
 async function main() {
   const parsed = parseArgs(process.argv);
 
   if (parsed.mode === "multi-city") {
-    const result = await queryMultiCity(parsed.legs, parsed.options);
-    if (parsed.json) {
-      console.log(JSON.stringify(result, null, 2));
+    if (parsed.select != null) {
+      await runStepSelect(parsed.legs, parsed.select, parsed.options);
     } else {
-      printMultiCityResult(result, parsed.showAll);
+      const result = await queryMultiCity(parsed.legs, parsed.options);
+      if (parsed.json) {
+        console.log(JSON.stringify(result, null, 2));
+      } else {
+        printMultiCityResult(result, parsed.showAll);
+      }
     }
   } else {
     let result: FlightResult;

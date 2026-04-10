@@ -78,4 +78,26 @@ export interface QueryOptions {
   adults?: number;
   children?: number;
   maxStops?: 0 | 1 | 2;
+  /** IATA airline codes to filter by, e.g. ["BR", "CI"] */
+  airlines?: string[];
+  /** Max flight duration in minutes */
+  maxDuration?: number;
+  /** Departure time range [earliest_hour, latest_hour] (0-24) */
+  departureTime?: [number, number];
+  /** Arrival time range [earliest_hour, latest_hour] (0-24) */
+  arrivalTime?: [number, number];
+  /** Restrict layovers to specific airports, e.g. ["NRT", "ICN"] */
+  layoverAirports?: string[];
+  /** Max layover duration in minutes */
+  maxLayoverDuration?: number;
+  /** Only show flights with less-than-average emissions */
+  lessEmissions?: boolean;
+  /** Max price in USD */
+  maxPrice?: number;
+  /** Number of checked bags to include in price */
+  checkedBags?: number;
+  /** Include carry-on in price */
+  carryOn?: boolean;
+  /** Exclude basic economy fares */
+  excludeBasicEconomy?: boolean;
 }

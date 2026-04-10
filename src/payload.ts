@@ -1,4 +1,4 @@
-import { SEAT_MAP, STOPS_MAP, TRIP_MAP, type SeatClass, type TripType } from "./types.js";
+import { SEAT_MAP, STOPS_MAP, TRIP_MAP, type QueryOptions, type SeatClass, type TripType } from "./types.js";
 
 export interface SelectedFlightInfo {
   originAirport: string;
@@ -13,25 +13,34 @@ function buildSegment(
   origin: string,
   destination: string,
   date: string,
-  maxStops?: number,
+  options: QueryOptions = {},
 ): unknown[] {
-  const stopsFilter = maxStops != null ? (STOPS_MAP[maxStops] ?? 0) : 0;
+  const stopsFilter = options.maxStops != null ? (STOPS_MAP[options.maxStops] ?? 0) : 0;
+
+  // Time constraints: [depEarliest, depLatest, arrEarliest, arrLatest] in hours 0-24
+  let timeConstraints: number[] | null = null;
+  if (options.departureTime || options.arrivalTime) {
+    const [depFrom, depTo] = options.departureTime ?? [0, 24];
+    const [arrFrom, arrTo] = options.arrivalTime ?? [0, 24];
+    timeConstraints = [depFrom, depTo, arrFrom, arrTo];
+  }
+
   return [
-    [[[origin, 0]]],       // [0] departure airports
-    [[[destination, 0]]],  // [1] arrival airports
-    null,                  // [2] time constraints
-    stopsFilter,           // [3] stops filter
-    null,                  // [4] airline filter
-    null,                  // [5]
-    date,                  // [6] travel date YYYY-MM-DD
-    null,                  // [7] max duration
-    null,                  // [8] selected flight
-    null,                  // [9] layover airports
-    null,                  // [10]
-    null,                  // [11]
-    null,                  // [12] layover max duration
-    null,                  // [13] emissions filter
-    3,                     // [14] hardcoded
+    [[[origin, 0]]],                                                    // [0] departure airports
+    [[[destination, 0]]],                                               // [1] arrival airports
+    timeConstraints,                                                    // [2] time constraints
+    stopsFilter,                                                        // [3] stops filter
+    options.airlines?.length ? options.airlines.sort() : null,          // [4] airline filter
+    null,                                                               // [5]
+    date,                                                               // [6] travel date YYYY-MM-DD
+    options.maxDuration != null ? [options.maxDuration] : null,         // [7] max duration [minutes]
+    null,                                                               // [8] selected flight
+    options.layoverAirports?.length ? options.layoverAirports : null,   // [9] layover airports
+    null,                                                               // [10]
+    null,                                                               // [11]
+    options.maxLayoverDuration ?? null,                                  // [12] layover max duration (minutes)
+    options.lessEmissions ? [1] : null,                                 // [13] emissions filter
+    3,                                                                  // [14] hardcoded
   ];
 }
 
@@ -39,10 +48,17 @@ function buildSegment(
 export function buildPayload(
   segments: unknown[][],
   tripType: TripType = "round-trip",
-  seatClass: SeatClass = "economy",
-  adults: number = 1,
-  children: number = 0,
+  options: QueryOptions = {},
 ): string {
+  const seatClass = options.seatClass ?? "economy";
+  const adults = options.adults ?? 1;
+  const children = options.children ?? 0;
+
+  const maxPrice = options.maxPrice != null ? [null, options.maxPrice] : null;
+  const bags = (options.checkedBags != null || options.carryOn != null)
+    ? [options.checkedBags ?? 0, options.carryOn ? 1 : 0]
+    : null;
+
   const filters = [
     [],  // outer[0]
     [
@@ -53,10 +69,10 @@ export function buildPayload(
       [],                             // [4] MUST be []
       SEAT_MAP[seatClass],           // [5] seat class
       [adults, children, 0, 0],      // [6] passengers
-      null,                           // [7] max price
+      maxPrice,                       // [7] max price
       null,                           // [8]
       null,                           // [9]
-      null,                           // [10] bags
+      bags,                           // [10] bags
       null,                           // [11]
       null,                           // [12]
       segments,                       // [13] flight segments
@@ -65,7 +81,7 @@ export function buildPayload(
       null,                           // [16]
       1,                              // [17] hardcoded
       null, null, null, null, null, null, null, null, null, null,  // [18-27]
-      0,                              // [28] exclude basic economy
+      options.excludeBasicEconomy ? 1 : 0,  // [28] exclude basic economy
     ],
     2,  // sort by cheapest
     1,  // all results
@@ -86,16 +102,10 @@ export function buildOneWayPayload(
   origin: string,
   destination: string,
   date: string,
-  options: { seatClass?: SeatClass; adults?: number; children?: number; maxStops?: number } = {},
+  options: QueryOptions = {},
 ): string {
-  const segment = buildSegment(origin, destination, date, options.maxStops);
-  return buildPayload(
-    [segment],
-    "one-way",
-    options.seatClass ?? "economy",
-    options.adults ?? 1,
-    options.children ?? 0,
-  );
+  const segment = buildSegment(origin, destination, date, options);
+  return buildPayload([segment], "one-way", options);
 }
 
 /**
@@ -106,17 +116,11 @@ export function buildRoundTripPayload(
   destination: string,
   departureDate: string,
   returnDate: string,
-  options: { seatClass?: SeatClass; adults?: number; children?: number; maxStops?: number } = {},
+  options: QueryOptions = {},
 ): string {
-  const segOut = buildSegment(origin, destination, departureDate, options.maxStops);
-  const segRet = buildSegment(destination, origin, returnDate, options.maxStops);
-  return buildPayload(
-    [segOut, segRet],
-    "round-trip",
-    options.seatClass ?? "economy",
-    options.adults ?? 1,
-    options.children ?? 0,
-  );
+  const segOut = buildSegment(origin, destination, departureDate, options);
+  const segRet = buildSegment(destination, origin, returnDate, options);
+  return buildPayload([segOut, segRet], "round-trip", options);
 }
 
 export interface MultiCityLeg {
@@ -130,16 +134,10 @@ export interface MultiCityLeg {
  */
 export function buildMultiCityPayload(
   legs: MultiCityLeg[],
-  options: { seatClass?: SeatClass; adults?: number; children?: number; maxStops?: number } = {},
+  options: QueryOptions = {},
 ): string {
-  const segments = legs.map((leg) => buildSegment(leg.origin, leg.destination, leg.date, options.maxStops));
-  return buildPayload(
-    segments,
-    "multi-city",
-    options.seatClass ?? "economy",
-    options.adults ?? 1,
-    options.children ?? 0,
-  );
+  const segments = legs.map((leg) => buildSegment(leg.origin, leg.destination, leg.date, options));
+  return buildPayload(segments, "multi-city", options);
 }
 
 /**
@@ -150,9 +148,9 @@ function buildSegmentWithSelection(
   destination: string,
   date: string,
   selectedFlight: SelectedFlightInfo,
-  maxStops?: number,
+  options: QueryOptions = {},
 ): unknown[] {
-  const seg = buildSegment(origin, destination, date, maxStops);
+  const seg = buildSegment(origin, destination, date, options);
   seg[8] = [[
     selectedFlight.originAirport,
     selectedFlight.date,
@@ -172,23 +170,26 @@ export function buildMultiCityStepPayload(
   legs: MultiCityLeg[],
   bookingToken: string,
   selectedFlights: SelectedFlightInfo[],
-  options: { seatClass?: SeatClass; adults?: number; children?: number; maxStops?: number } = {},
+  options: QueryOptions = {},
 ): string {
   const seatClass = options.seatClass ?? "economy";
   const adults = options.adults ?? 1;
   const children = options.children ?? 0;
 
+  const maxPrice = options.maxPrice != null ? [null, options.maxPrice] : null;
+  const bags = (options.checkedBags != null || options.carryOn != null)
+    ? [options.checkedBags ?? 0, options.carryOn ? 1 : 0]
+    : null;
+
   const segments = legs.map((leg, i) => {
     if (i < selectedFlights.length) {
-      // Already selected segment — include selection in [8]
       return buildSegmentWithSelection(
         leg.origin, leg.destination, leg.date,
         selectedFlights[i],
-        options.maxStops,
+        options,
       );
     }
-    // Not yet selected — normal segment
-    return buildSegment(leg.origin, leg.destination, leg.date, options.maxStops);
+    return buildSegment(leg.origin, leg.destination, leg.date, options);
   });
 
   const filters = [
@@ -201,10 +202,10 @@ export function buildMultiCityStepPayload(
       [],                             // [4] MUST be []
       SEAT_MAP[seatClass],           // [5] seat class
       [adults, children, 0, 0],      // [6] passengers
-      null,                           // [7] max price
+      maxPrice,                       // [7] max price
       null,                           // [8]
       null,                           // [9]
-      null,                           // [10] bags
+      bags,                           // [10] bags
       null,                           // [11]
       null,                           // [12]
       segments,                       // [13] flight segments
@@ -213,10 +214,10 @@ export function buildMultiCityStepPayload(
       null,                           // [16]
       1,                              // [17] hardcoded
       null, null, null, null, null, null, null, null, null, null,  // [18-27]
-      0,                              // [28] exclude basic economy
+      options.excludeBasicEconomy ? 1 : 0,  // [28] exclude basic economy
     ],
-    0,  // sort (was 2)
-    0,  // results (was 1)
+    0,  // sort
+    0,  // results
     0,
     1,
   ];

@@ -46,25 +46,25 @@ describe("buildPayload", () => {
   });
 
   it("sets seat class to business", () => {
-    const result = buildPayload([dummySegment], "round-trip", "business");
+    const result = buildPayload([dummySegment], "round-trip", { seatClass: "business" });
     const inner = parseInner(result);
     expect(inner[1][5]).toBe(3); // business = 3
   });
 
   it("sets seat class to first", () => {
-    const result = buildPayload([dummySegment], "round-trip", "first");
+    const result = buildPayload([dummySegment], "round-trip", { seatClass: "first" });
     const inner = parseInner(result);
     expect(inner[1][5]).toBe(4);
   });
 
   it("sets seat class to premium_economy", () => {
-    const result = buildPayload([dummySegment], "round-trip", "premium_economy");
+    const result = buildPayload([dummySegment], "round-trip", { seatClass: "premium_economy" });
     const inner = parseInner(result);
     expect(inner[1][5]).toBe(2);
   });
 
   it("sets passengers correctly", () => {
-    const result = buildPayload([dummySegment], "round-trip", "economy", 2, 1);
+    const result = buildPayload([dummySegment], "round-trip", { adults: 2, children: 1 });
     const inner = parseInner(result);
     expect(inner[1][6]).toEqual([2, 1, 0, 0]);
   });
@@ -236,6 +236,125 @@ describe("buildMultiCityPayload", () => {
     expect(inner[1][6]).toEqual([2, 0, 0, 0]); // 2 adults
     expect(inner[1][13][0][3]).toBe(1); // nonstop filter
     expect(inner[1][13][1][3]).toBe(1); // nonstop filter
+  });
+});
+
+describe("segment-level filters", () => {
+  it("sets airline filter sorted", () => {
+    const result = buildOneWayPayload("SFO", "LAX", "2026-05-15", { airlines: ["DL", "AA"] });
+    const seg = parseInner(result)[1][13][0];
+    expect(seg[4]).toEqual(["AA", "DL"]);
+  });
+
+  it("defaults airline filter to null", () => {
+    const result = buildOneWayPayload("SFO", "LAX", "2026-05-15");
+    const seg = parseInner(result)[1][13][0];
+    expect(seg[4]).toBeNull();
+  });
+
+  it("sets departure and arrival time constraints", () => {
+    const result = buildOneWayPayload("SFO", "LAX", "2026-05-15", {
+      departureTime: [8, 18],
+      arrivalTime: [10, 22],
+    });
+    const seg = parseInner(result)[1][13][0];
+    expect(seg[2]).toEqual([8, 18, 10, 22]);
+  });
+
+  it("sets departure time only with default arrival", () => {
+    const result = buildOneWayPayload("SFO", "LAX", "2026-05-15", {
+      departureTime: [6, 12],
+    });
+    const seg = parseInner(result)[1][13][0];
+    expect(seg[2]).toEqual([6, 12, 0, 24]);
+  });
+
+  it("defaults time constraints to null", () => {
+    const result = buildOneWayPayload("SFO", "LAX", "2026-05-15");
+    const seg = parseInner(result)[1][13][0];
+    expect(seg[2]).toBeNull();
+  });
+
+  it("sets max duration in minutes", () => {
+    const result = buildOneWayPayload("SFO", "LAX", "2026-05-15", { maxDuration: 480 });
+    const seg = parseInner(result)[1][13][0];
+    expect(seg[7]).toEqual([480]);
+  });
+
+  it("defaults max duration to null", () => {
+    const result = buildOneWayPayload("SFO", "LAX", "2026-05-15");
+    const seg = parseInner(result)[1][13][0];
+    expect(seg[7]).toBeNull();
+  });
+
+  it("sets layover airports", () => {
+    const result = buildOneWayPayload("SFO", "NRT", "2026-05-15", {
+      layoverAirports: ["ORD", "DFW"],
+    });
+    const seg = parseInner(result)[1][13][0];
+    expect(seg[9]).toEqual(["ORD", "DFW"]);
+  });
+
+  it("sets max layover duration", () => {
+    const result = buildOneWayPayload("SFO", "NRT", "2026-05-15", { maxLayoverDuration: 720 });
+    const seg = parseInner(result)[1][13][0];
+    expect(seg[12]).toBe(720);
+  });
+
+  it("sets emissions filter", () => {
+    const result = buildOneWayPayload("SFO", "LAX", "2026-05-15", { lessEmissions: true });
+    const seg = parseInner(result)[1][13][0];
+    expect(seg[13]).toEqual([1]);
+  });
+
+  it("defaults emissions filter to null", () => {
+    const result = buildOneWayPayload("SFO", "LAX", "2026-05-15");
+    const seg = parseInner(result)[1][13][0];
+    expect(seg[13]).toBeNull();
+  });
+});
+
+describe("outer-level filters", () => {
+  it("sets max price", () => {
+    const result = buildOneWayPayload("SFO", "LAX", "2026-05-15", { maxPrice: 500 });
+    const inner = parseInner(result);
+    expect(inner[1][7]).toEqual([null, 500]);
+  });
+
+  it("defaults max price to null", () => {
+    const result = buildOneWayPayload("SFO", "LAX", "2026-05-15");
+    const inner = parseInner(result);
+    expect(inner[1][7]).toBeNull();
+  });
+
+  it("sets checked bags and carry-on", () => {
+    const result = buildOneWayPayload("SFO", "LAX", "2026-05-15", { checkedBags: 1, carryOn: true });
+    const inner = parseInner(result);
+    expect(inner[1][10]).toEqual([1, 1]);
+  });
+
+  it("sets checked bags only", () => {
+    const result = buildOneWayPayload("SFO", "LAX", "2026-05-15", { checkedBags: 2 });
+    const inner = parseInner(result);
+    expect(inner[1][10]).toEqual([2, 0]);
+  });
+
+  it("defaults bags to null", () => {
+    const result = buildOneWayPayload("SFO", "LAX", "2026-05-15");
+    const inner = parseInner(result);
+    expect(inner[1][10]).toBeNull();
+  });
+
+  it("sets exclude basic economy", () => {
+    const result = buildOneWayPayload("SFO", "LAX", "2026-05-15", { excludeBasicEconomy: true });
+    const inner = parseInner(result);
+    expect(inner[1][28]).toBe(1);
+  });
+
+  it("defaults exclude basic economy to 0", () => {
+    const result = buildOneWayPayload("SFO", "LAX", "2026-05-15");
+    const inner = parseInner(result);
+    expect(inner[1][28]).toBe(0);
   });
 });
 
