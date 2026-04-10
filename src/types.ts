@@ -42,6 +42,21 @@ export interface Itinerary {
   legs: FlightLeg[];
   totalDuration: number;
   stops: number;
+  bookingToken?: string;
+}
+
+export interface MultiCitySegment {
+  origin: string;
+  destination: string;
+  date: string;
+  selected: Itinerary;
+  alternatives: Itinerary[];
+}
+
+export interface MultiCityResult {
+  totalPrice: number | null;
+  segments: MultiCitySegment[];
+  error: string | null;
 }
 
 export interface FlightResult {

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { queryOneWay, queryRoundTrip, queryMultiCity } from "./client.js";
-import type { FlightResult, QueryOptions, SeatClass } from "./types.js";
+import type { FlightResult, MultiCityResult, QueryOptions, SeatClass } from "./types.js";
 import type { MultiCityLeg } from "./payload.js";
 
 function usage(): void {
@@ -150,22 +150,63 @@ function printResult(result: FlightResult, showAll: boolean) {
   }
 }
 
+function printMultiCityResult(result: MultiCityResult, showAll: boolean) {
+  if (result.error) {
+    console.error(`Error: ${result.error}`);
+    process.exit(1);
+  }
+
+  console.log(`\nMulti-city  ${result.segments.length} segments  Total: $${result.totalPrice}\n`);
+
+  for (let i = 0; i < result.segments.length; i++) {
+    const seg = result.segments[i];
+    console.log(`--- Segment ${i + 1}: ${seg.origin} -> ${seg.destination}  ${seg.date} ---`);
+
+    const itineraries = showAll
+      ? [seg.selected, ...seg.alternatives]
+      : [seg.selected];
+
+    for (const it of itineraries) {
+      const isSelected = it === seg.selected;
+      const prefix = isSelected ? "  * " : "    ";
+      const stops = it.stops === 0 ? "nonstop" : `${it.stops} stop${it.stops > 1 ? "s" : ""}`;
+      console.log(`${prefix}$${it.price}  ${formatDuration(it.totalDuration)}  ${stops}`);
+      for (const leg of it.legs) {
+        const airline = leg.airlineName || leg.airline;
+        console.log(`${prefix}  ${airline} ${leg.flightNumber}  ${leg.origin}->${leg.destination}  ${leg.departureTime} - ${leg.arrivalTime}  ${formatDuration(leg.durationMinutes)}  ${leg.aircraft}`);
+      }
+    }
+
+    if (!showAll && seg.alternatives.length > 0) {
+      console.log(`    ${seg.alternatives.length} more options (use --all to show)`);
+    }
+    console.log();
+  }
+}
+
 async function main() {
   const parsed = parseArgs(process.argv);
 
-  let result: FlightResult;
   if (parsed.mode === "multi-city") {
-    result = await queryMultiCity(parsed.legs, parsed.options);
-  } else if (parsed.mode === "round-trip") {
-    result = await queryRoundTrip(parsed.origin, parsed.destination, parsed.date, parsed.returnDate!, parsed.options);
+    const result = await queryMultiCity(parsed.legs, parsed.options);
+    if (parsed.json) {
+      console.log(JSON.stringify(result, null, 2));
+    } else {
+      printMultiCityResult(result, parsed.showAll);
+    }
   } else {
-    result = await queryOneWay(parsed.origin, parsed.destination, parsed.date, parsed.options);
-  }
+    let result: FlightResult;
+    if (parsed.mode === "round-trip") {
+      result = await queryRoundTrip(parsed.origin, parsed.destination, parsed.date, parsed.returnDate!, parsed.options);
+    } else {
+      result = await queryOneWay(parsed.origin, parsed.destination, parsed.date, parsed.options);
+    }
 
-  if (parsed.json) {
-    console.log(JSON.stringify(result, null, 2));
-  } else {
-    printResult(result, parsed.showAll);
+    if (parsed.json) {
+      console.log(JSON.stringify(result, null, 2));
+    } else {
+      printResult(result, parsed.showAll);
+    }
   }
 }
 

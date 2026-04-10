@@ -1,5 +1,13 @@
 import { SEAT_MAP, STOPS_MAP, TRIP_MAP, type SeatClass, type TripType } from "./types.js";
 
+export interface SelectedFlightInfo {
+  originAirport: string;
+  date: string;
+  destinationAirport: string;
+  airlineCode: string;
+  flightNumber: string;
+}
+
 /** Build a flight segment for the request payload. */
 function buildSegment(
   origin: string,
@@ -132,4 +140,88 @@ export function buildMultiCityPayload(
     options.adults ?? 1,
     options.children ?? 0,
   );
+}
+
+/**
+ * Build a segment with a selected flight for step 2+ of multi-city.
+ */
+function buildSegmentWithSelection(
+  origin: string,
+  destination: string,
+  date: string,
+  selectedFlight: SelectedFlightInfo,
+  maxStops?: number,
+): unknown[] {
+  const seg = buildSegment(origin, destination, date, maxStops);
+  seg[8] = [[
+    selectedFlight.originAirport,
+    selectedFlight.date,
+    selectedFlight.destinationAirport,
+    null,
+    selectedFlight.airlineCode,
+    selectedFlight.flightNumber,
+  ]];
+  return seg;
+}
+
+/**
+ * Build payload for step 2+ of a multi-city query.
+ * Includes the booking token and selected flight info from previous steps.
+ */
+export function buildMultiCityStepPayload(
+  legs: MultiCityLeg[],
+  bookingToken: string,
+  selectedFlights: SelectedFlightInfo[],
+  options: { seatClass?: SeatClass; adults?: number; children?: number; maxStops?: number } = {},
+): string {
+  const seatClass = options.seatClass ?? "economy";
+  const adults = options.adults ?? 1;
+  const children = options.children ?? 0;
+
+  const segments = legs.map((leg, i) => {
+    if (i < selectedFlights.length) {
+      // Already selected segment — include selection in [8]
+      return buildSegmentWithSelection(
+        leg.origin, leg.destination, leg.date,
+        selectedFlights[i],
+        options.maxStops,
+      );
+    }
+    // Not yet selected — normal segment
+    return buildSegment(leg.origin, leg.destination, leg.date, options.maxStops);
+  });
+
+  const filters = [
+    [null, bookingToken],  // outer[0] — contains booking token
+    [
+      null,                           // [0]
+      null,                           // [1]
+      TRIP_MAP["multi-city"],         // [2] trip type
+      null,                           // [3]
+      [],                             // [4] MUST be []
+      SEAT_MAP[seatClass],           // [5] seat class
+      [adults, children, 0, 0],      // [6] passengers
+      null,                           // [7] max price
+      null,                           // [8]
+      null,                           // [9]
+      null,                           // [10] bags
+      null,                           // [11]
+      null,                           // [12]
+      segments,                       // [13] flight segments
+      null,                           // [14]
+      null,                           // [15]
+      null,                           // [16]
+      1,                              // [17] hardcoded
+      null, null, null, null, null, null, null, null, null, null,  // [18-27]
+      0,                              // [28] exclude basic economy
+    ],
+    0,  // sort (was 2)
+    0,  // results (was 1)
+    0,
+    1,
+  ];
+
+  const filtersJson = JSON.stringify(filters);
+  const outer = JSON.stringify([null, filtersJson]);
+  return `f.req=${encodeURIComponent(outer)}`;
 }

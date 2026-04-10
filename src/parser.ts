@@ -92,11 +92,15 @@ function parseItinerary(k: unknown[]): Itinerary | null {
       }
     }
 
+    // Extract booking token from k[1][1]
+    const bookingToken = priceArr?.[1];
+
     return {
       price: Number(price),
       legs,
       totalDuration,
       stops: Math.max(0, legs.length - 1),
+      bookingToken: typeof bookingToken === "string" ? bookingToken : undefined,
     };
   } catch {
     return null;
