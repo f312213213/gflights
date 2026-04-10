@@ -2,7 +2,8 @@ import type { FlightLeg, Itinerary } from "./types.js";
 
 /**
  * Parse a single leg from the response array.
- * Leg field indices from Python:
+ *
+ * Field indices:
  *   [3]=origin, [6]=dest, [8]=dep_time [h,m], [10]=arr_time [h,m],
  *   [11]=duration_min, [17]=aircraft, [20]=dep_date, [21]=arr_date,
  *   [22]=[airline_code, flight_num, ?, airline_name]
@@ -102,10 +103,7 @@ function parseItinerary(k: unknown[]): Itinerary | null {
   }
 }
 
-/**
- * Parse the GetShoppingResults response into itineraries.
- * Mirrors Python's _parse_response().
- */
+/** Parse the GetShoppingResults response into itineraries. */
 export function parseResponse(text: string): Itinerary[] {
   const cleaned = text.replace(/^\)\]\}'[\s]*/, "");
 

@@ -1,4 +1,4 @@
-import { buildOneWayPayload, buildRoundTripPayload } from "./payload.js";
+import { buildOneWayPayload, buildRoundTripPayload, buildMultiCityPayload, type MultiCityLeg } from "./payload.js";
 import { parseResponse } from "./parser.js";
 import type { FlightResult, Itinerary, QueryOptions } from "./types.js";
 
@@ -119,6 +119,54 @@ export async function queryRoundTrip(
   } catch (e) {
     return {
       origin, destination, departureDate, returnDate,
+      priceUsd: null, durationMinutes: null, stops: null,
+      airlines: [], legs: [], itineraries: [],
+      error: String(e),
+    };
+  }
+}
+
+/**
+ * Query a multi-city flight.
+ */
+export async function queryMultiCity(
+  legs: MultiCityLeg[],
+  options: QueryOptions = {},
+): Promise<FlightResult> {
+  const payload = buildMultiCityPayload(legs, options);
+  const firstLeg = legs[0];
+  const lastLeg = legs[legs.length - 1];
+
+  try {
+    const text = await makeRequest(payload);
+    const itineraries = parseResponse(text);
+
+    if (itineraries.length === 0) {
+      return {
+        origin: firstLeg.origin, destination: lastLeg.destination,
+        departureDate: firstLeg.date, returnDate: null,
+        priceUsd: null, durationMinutes: null, stops: null,
+        airlines: [], legs: [], itineraries: [],
+        error: "NO_RESULTS",
+      };
+    }
+
+    const best = bestItinerary(itineraries)!;
+    return {
+      origin: firstLeg.origin, destination: lastLeg.destination,
+      departureDate: firstLeg.date, returnDate: null,
+      priceUsd: best.price,
+      durationMinutes: best.totalDuration,
+      stops: best.stops,
+      airlines: [...new Set(best.legs.map((l) => l.airline).filter(Boolean))],
+      legs: best.legs,
+      itineraries,
+      error: null,
+    };
+  } catch (e) {
+    return {
+      origin: firstLeg.origin, destination: lastLeg.destination,
+      departureDate: firstLeg.date, returnDate: null,
       priceUsd: null, durationMinutes: null, stops: null,
       airlines: [], legs: [], itineraries: [],
       error: String(e),

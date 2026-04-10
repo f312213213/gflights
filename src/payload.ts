@@ -1,9 +1,6 @@
 import { SEAT_MAP, STOPS_MAP, TRIP_MAP, type SeatClass, type TripType } from "./types.js";
 
-/**
- * Build a flight segment for the request payload.
- * Mirrors Python's _build_segment().
- */
+/** Build a flight segment for the request payload. */
 function buildSegment(
   origin: string,
   destination: string,
@@ -30,10 +27,7 @@ function buildSegment(
   ];
 }
 
-/**
- * Build the f.req payload for GetShoppingResults.
- * Mirrors Python's _build_payload().
- */
+/** Build the f.req payload for GetShoppingResults. */
 export function buildPayload(
   segments: unknown[][],
   tripType: TripType = "round-trip",
@@ -111,6 +105,29 @@ export function buildRoundTripPayload(
   return buildPayload(
     [segOut, segRet],
     "round-trip",
+    options.seatClass ?? "economy",
+    options.adults ?? 1,
+    options.children ?? 0,
+  );
+}
+
+export interface MultiCityLeg {
+  origin: string;
+  destination: string;
+  date: string;
+}
+
+/**
+ * Build payload for a multi-city query.
+ */
+export function buildMultiCityPayload(
+  legs: MultiCityLeg[],
+  options: { seatClass?: SeatClass; adults?: number; children?: number; maxStops?: number } = {},
+): string {
+  const segments = legs.map((leg) => buildSegment(leg.origin, leg.destination, leg.date, options.maxStops));
+  return buildPayload(
+    segments,
+    "multi-city",
     options.seatClass ?? "economy",
     options.adults ?? 1,
     options.children ?? 0,

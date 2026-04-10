@@ -1,6 +1,6 @@
-export { queryOneWay, queryRoundTrip, queryBatch } from "./client.js";
+export { queryOneWay, queryRoundTrip, queryMultiCity, queryBatch } from "./client.js";
 export { parseResponse } from "./parser.js";
-export { buildPayload, buildOneWayPayload, buildRoundTripPayload } from "./payload.js";
+export { buildPayload, buildOneWayPayload, buildRoundTripPayload, buildMultiCityPayload, type MultiCityLeg } from "./payload.js";
 export {
   SEAT_MAP,
   TRIP_MAP,
