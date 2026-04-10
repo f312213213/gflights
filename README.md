@@ -6,11 +6,50 @@ Uses Google's internal `GetShoppingResults` RPC endpoint with realistic browser 
 
 ## Install
 
+### CLI (Homebrew)
+
+```bash
+brew tap f312213213/gflights
+brew install gflights
+```
+
+### Library (npm)
+
 ```bash
 pnpm add gflights
 ```
 
-## Usage
+## CLI
+
+```bash
+# One-way
+gflights SFO LAX 2026-05-15
+
+# Round-trip
+gflights JFK LHR 2026-06-01 2026-06-15
+
+# With options
+gflights JFK LHR 2026-06-01 2026-06-15 --class business --stops 0 --adults 2
+
+# Show all results
+gflights SFO LAX 2026-05-15 --all
+
+# JSON output (pipe to jq, etc.)
+gflights SFO LAX 2026-05-15 --json
+```
+
+### CLI Options
+
+| Flag | Description |
+|---|---|
+| `--class <class>` | `economy`, `premium_economy`, `business`, `first` |
+| `--adults <n>` | Number of adults (default: 1) |
+| `--children <n>` | Number of children (default: 0) |
+| `--stops <n>` | Max stops: `0`, `1`, or `2` |
+| `--all` | Show all itineraries |
+| `--json` | Output raw JSON |
+
+## Library Usage
 
 ### One-way search
 
