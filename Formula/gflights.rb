@@ -1,8 +1,8 @@
 class Gflights < Formula
   desc "Search Google Flights from the terminal"
   homepage "https://github.com/f312213213/gflights"
-  url "https://registry.npmjs.org/gflights/-/gflights-0.3.1.tgz"
-  sha256 "c3170857c54eb1515a8460746a2d93f4c7901f0e3abed1cdd9879b1656c5e8e8"
+  url "https://registry.npmjs.org/gflights/-/gflights-0.4.0.tgz"
+  sha256 "48e38c24378d953e70daf2c47a4a283a2cf1d25ac234aab4435bffa61f7d31db"
   license "MIT"
 
   depends_on "node"
