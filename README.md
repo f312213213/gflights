@@ -9,7 +9,7 @@ Uses Google's internal `GetShoppingResults` RPC endpoint with realistic browser 
 ### CLI (Homebrew)
 
 ```bash
-brew tap f312213213/gflights
+brew tap f312213213/gflights https://github.com/f312213213/gflights
 brew install gflights
 ```
 
