@@ -1,0 +1,144 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            target: darwin-arm64
+            bun_target: bun-darwin-arm64
+          - os: macos-13
+            target: darwin-x64
+            bun_target: bun-darwin-x64
+          - os: ubuntu-latest
+            target: linux-x64
+            bun_target: bun-linux-x64
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Build binary
+        run: bun build src/cli.ts --compile --target=${{ matrix.bun_target }} --outfile gflights-${{ matrix.target }}
+
+      - name: Compress
+        run: |
+          tar czf gflights-${{ matrix.target }}.tar.gz gflights-${{ matrix.target }}
+          shasum -a 256 gflights-${{ matrix.target }}.tar.gz > gflights-${{ matrix.target }}.tar.gz.sha256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gflights-${{ matrix.target }}
+          path: |
+            gflights-${{ matrix.target }}.tar.gz
+            gflights-${{ matrix.target }}.tar.gz.sha256
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            gflights-*.tar.gz
+            gflights-*.tar.gz.sha256
+
+  update-formula:
+    needs: release
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: gflights-darwin-arm64
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: gflights-darwin-x64
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: gflights-linux-x64
+
+      - name: Update formula
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          ARM64_SHA=$(awk '{print $1}' gflights-darwin-arm64.tar.gz.sha256)
+          X64_SHA=$(awk '{print $1}' gflights-darwin-x64.tar.gz.sha256)
+          LINUX_SHA=$(awk '{print $1}' gflights-linux-x64.tar.gz.sha256)
+
+          cat > Formula/gflights.rb << EOF
+          class Gflights < Formula
+            desc "Search Google Flights from the terminal"
+            homepage "https://github.com/f312213213/gflights"
+            version "${VERSION}"
+            license "MIT"
+
+            on_macos do
+              on_arm do
+                url "https://github.com/f312213213/gflights/releases/download/v#{version}/gflights-darwin-arm64.tar.gz"
+                sha256 "${ARM64_SHA}"
+
+                def install
+                  bin.install "gflights-darwin-arm64" => "gflights"
+                end
+              end
+
+              on_intel do
+                url "https://github.com/f312213213/gflights/releases/download/v#{version}/gflights-darwin-x64.tar.gz"
+                sha256 "${X64_SHA}"
+
+                def install
+                  bin.install "gflights-darwin-x64" => "gflights"
+                end
+              end
+            end
+
+            on_linux do
+              on_intel do
+                url "https://github.com/f312213213/gflights/releases/download/v#{version}/gflights-linux-x64.tar.gz"
+                sha256 "${LINUX_SHA}"
+
+                def install
+                  bin.install "gflights-linux-x64" => "gflights"
+                end
+              end
+            end
+
+            test do
+              assert_match "Usage:", shell_output("#{bin}/gflights --help")
+            end
+          end
+          EOF
+
+          # Fix indentation (heredoc adds leading spaces)
+          sed -i 's/^          //' Formula/gflights.rb
+
+      - name: Commit formula update
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/gflights.rb
+          git commit -m "formula: update to ${GITHUB_REF_NAME}"
+          git push
