@@ -7,7 +7,7 @@ class Gflights < Formula
   on_macos do
     on_arm do
       url "https://github.com/f312213213/gflights/releases/download/v#{version}/gflights-darwin-arm64.tar.gz"
-      sha256 "d24bf7fba71e6637758a3f92a229c7c34ac4b27a9d1ac966a4d53584b83eb2f2"
+      sha256 "cfa7cf2e38c42c73147ea7603e42b1ad55d00df9ae2e2d56c870a8c292f20073"
 
       def install
         bin.install "gflights-darwin-arm64" => "gflights"
@@ -16,7 +16,7 @@ class Gflights < Formula
 
     on_intel do
       url "https://github.com/f312213213/gflights/releases/download/v#{version}/gflights-darwin-x64.tar.gz"
-      sha256 "54a778004df2ab6f1e2de646869f080969c55a5ffe541d460ef06e110a288ca9"
+      sha256 "395a6866c6d09a2aa6a093ba4bc2399f81e5342e944a5399a6389d05336a0e3b"
 
       def install
         bin.install "gflights-darwin-x64" => "gflights"
@@ -27,7 +27,7 @@ class Gflights < Formula
   on_linux do
     on_intel do
       url "https://github.com/f312213213/gflights/releases/download/v#{version}/gflights-linux-x64.tar.gz"
-      sha256 "84a5edc22a64ff800a2c07f292ad37e3674be912947664029562c9b0a10cb8fa"
+      sha256 "49c20dcebf9d37f32035d38b3cd080b95171e3346174ecf1105e3460c7b62e38"
 
       def install
         bin.install "gflights-linux-x64" => "gflights"
